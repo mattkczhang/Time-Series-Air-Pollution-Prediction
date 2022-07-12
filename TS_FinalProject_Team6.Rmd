@@ -1,0 +1,1028 @@
+---
+title: "TS_FinalProject_Team2"
+author: "Flora Huang, Zhangchi Liu, Qiansheng Zhou, Matt Zhang, Michael Wu"
+date: '2022-05-23'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(lubridate)
+library(fpp)
+library(TSA)
+library(tseries)
+library(Metrics)
+```
+
+## Data Exploratory
+
+```{r}
+# Load Data
+df.raw <- read.csv(file = 'PRSA_Data_Wanshouxigong_20130301-20170228.csv')
+head(df.raw, 10)
+```
+
+```{r}
+# Check Missing Value
+sapply(df.raw, function(x) sum(is.na(x)))
+```
+
+```{r}
+# Check Correlation
+df.num <- df.raw[,c(2:15, 17)]
+res <- cor(as.matrix(df.num), method = "pearson", use = "pairwise.complete.obs")
+res
+```
+
+```{r}
+corrplot(res, type = "upper", order = "AOE", tl.col = "black", tl.srt = 40)
+```
+
+Select SO2, PM10, NO2, CO for further analysis
+
+```{r}
+df <- df.num[,c(1:11, 15)]
+head(df)
+```
+## Feature Engineering
+
+```{r}
+df$date <- as.Date(with(df,paste(year,month,day,sep="-","%Y-%m-%d")))
+Week <- as.Date(cut(df$date, "week"))
+df_weekly <- data.frame(aggregate(PM2.5 ~ Week, df, mean))
+df_weekly$PM10 <- aggregate(PM10 ~ Week, df, mean)[,c(2)]
+df_weekly$SO2 <- aggregate(SO2 ~ Week, df, mean)[,c(2)]
+df_weekly$NO2 <- aggregate(NO2 ~ Week, df, mean)[,c(2)]
+df_weekly$CO <- aggregate(CO ~ Week, df, mean)[,c(2)]
+df_weekly$TEMP <- aggregate(TEMP ~ Week, df, mean)[,c(2)]
+df_weekly$O3 <- aggregate(O3 ~ Week, df, mean)[,c(2)]
+df_weekly$WSPM <- aggregate(WSPM ~ Week, df, mean)[,c(2)]
+head(df_weekly)
+```
+
+```{r}
+# Check weekly correlation
+res_weekly <- cor(as.matrix(df_weekly[,-1]), method = "pearson", use = "pairwise.complete.obs")
+res_weekly
+
+corrplot(res_weekly, type = "upper", order = "AOE", tl.col = "black", tl.srt = 40, addCoef.col = "black")
+```
+## PM2.5 Data Exploratory
+```{r}
+df_weekly$year = as.numeric(format(df_weekly$Week, format = "%Y"))
+df_weekly$month = as.numeric(format(df_weekly$Week, format = "%m"))
+df_weekly$day = as.numeric(format(df_weekly$Week, format = "%d"))
+
+#df_weekly$MonthDay <- as.Date(paste(df_weekly$month, df_weekly$day, sep="-"), format = "%m-%d")
+#df_weekly$MonthDay = as.Date(with(df_weekly,paste(month,day,sep="-","%m-%d")))
+#df_weekly$MonthDay = as.Date(substr(df_weekly$Week, 6, 10), format = "%m%d")
+# df_weekly$MonthDay = as.Date(substr(df_weekly$Week, 6, 10))
+head(df_weekly)
+```
+
+```{r}
+# ggplot(df_weekly) +
+#   geom_line(aes(x = Week, y = PM2.5, color = year))
+```
+
+```{r}
+# ggplot(data = df_weekly, aes(x = Week, y = PM2.5, group = year)) +       
+#   geom_line(aes(group = year)) + geom_point()
+```
+
+
+```{r}
+PM2.5_week = ts(df_weekly[,2], start = c(2013,9), end = c(2017,9), frequency = 52)
+
+# split the data
+train <- window(PM2.5_week, start = c(2013,9), end = c(2016,49))
+test <- window(PM2.5_week, start = c(2016,50))
+test
+```
+```{r}
+head(df_weekly,1)
+```
+
+
+```{r}
+PM10_week <- ts(df_weekly[,3], start = c(2013,9), end = c(2017,9), frequency = 52)
+SO2_week <- ts(df_weekly[,4], start = c(2013,9), end = c(2017,9), frequency = 52)
+NO2_week <- ts(df_weekly[,5], start = c(2013,9), end = c(2017,9), frequency = 52)
+CO_week <- ts(df_weekly[,6], start = c(2013,9), end = c(2017,9), frequency = 52)
+TEMP_week <- ts(df_weekly[,7], start = c(2013,9), end = c(2017,9), frequency = 52)
+O3_week <- ts(df_weekly[,8], start = c(2013,9), end = c(2017,9), frequency = 52)
+WSPM_week <- ts(df_weekly[,9], start = c(2013,9), end = c(2017,9), frequency = 52)
+
+train_pm10 <- window(PM10_week, start = c(2013,9), end = c(2016,49))
+test_pm10 <- window(PM10_week, start = c(2016,50))
+train_so2 <- window(SO2_week, start = c(2013,9), end = c(2016,49))
+test_so2 <- window(SO2_week, start = c(2016,50))
+train_no2 <- window(NO2_week, start = c(2013,9), end = c(2016,49))
+test_no2 <- window(NO2_week, start = c(2016,50))
+train_co <- window(CO_week, start = c(2013,9), end = c(2016,49))
+test_co <- window(CO_week, start = c(2016,50))
+train_temp <- window(TEMP_week, start = c(2013,9), end = c(2016,49))
+test_temp <- window(TEMP_week, start = c(2016,50))
+train_o3 <- window(O3_week, start = c(2013,9), end = c(2016,49))
+test_o3 <- window(O3_week, start = c(2016,50))
+train_wspm <- window(WSPM_week, start = c(2013,9), end = c(2016,49))
+test_wspm <- window(WSPM_week, start = c(2016,50))
+```
+
+
+```{r}
+tsdisplay(train, main = "Plot of Training Weekly PM2.5 in Wanshouxigong")
+```
+
+```{r}
+tsdisplay(log(train), main = "Plot of Log Training Weekly PM2.5 in Wanshouxigong")
+```
+
+## Box-Cox Transformation
+
+```{r}
+lambda = BoxCox.lambda(train)
+lambda
+```
+
+```{r}
+autoplot(train)
+```
+
+```{r}
+train %>% BoxCox(lambda = lambda) %>% plot(main = 'Box-Cox Transformed PM2.5')
+```
+
+```{r}
+train %>% BoxCox(lambda = 0) %>% plot(main = 'LogTransformed PM2.5')
+```
+
+
+```{r}
+trans.PM <- BoxCox(train, lambda = lambda)
+```
+
+## Look for the differencing order
+## original data test for stationary
+```{r,warning=FALSE}
+kpss.test(trans.PM)
+adf.test(trans.PM)
+kpss.test(train)
+adf.test(train)
+## the data without transformation is also stationary
+```
+
+<span style="color:blue">***Answer:The train data is stationary.The ACF plot decreases quickly to zero, which proves tat the data is stationary. The p value for KPSS test is  larger than 0.05 and the p value for ADF test is less than 0.05,  both proving that the train data is stationary.  No need to difference the data***  </span>
+
+
+# seasonal differencing
+```{r}
+sea <- diff(train,lag=52)
+tsdisplay(sea,main="Seasonal Differenced Train")
+```
+
+```{r}
+tsdisplay(train, main = "Original Train")
+```
+
+```{r}
+tsdisplay(trans.PM, main="Box Train") 
+```
+
+```{r}
+tsdisplay(log(train),main = "Log(train)")
+```
+The data though looks having a seasonal pattern in the ACF
+
+# 1. Arima model 
+## a. Arima with transformation
+
+###  • Model 1: # nonseasonal box trans
+```{r}
+m1 <- auto.arima(train,lambda = lambda,seasonal=FALSE)
+summary(m1)
+```
+
+###  • Model 2: # nonseasonal log trans
+```{r}
+# nonseasonal log trans
+m2<-auto.arima(train,lambda=0,seasonal=FALSE)
+summary(m2)
+```
+
+###  • Model 3: # seasonal box trans
+```{r}
+# seasonal box trans
+m3 <- auto.arima(train,lambda = lambda,seasonal = TRUE)
+summary(m3)
+```
+
+###  • Model 4: # seasonal log trans
+```{r}
+# seasonal box trans
+m4 <- auto.arima(train,lambda = 0,seasonal = TRUE)
+summary(m4)
+```
+
+###  • Model 5: # seasonal box trans, D=1
+```{r}
+# seasonal box trans
+m5 <- auto.arima(train,lambda = lambda,seasonal = TRUE,D=1)
+summary(m5)
+```
+
+###  • Model 6: # seasonal log trans, D=1
+```{r}
+# seasonal box trans
+m6 <- auto.arima(train,lambda = 0,seasonal = TRUE,D=1)
+summary(m6)
+```
+
+## b. Arima without transformation
+
+###  • Model 7: # nonseasonal
+```{r}
+m7 <- auto.arima(train,seasonal = FALSE)
+summary(m7)
+```
+
+###  • Model 8: # seasonal
+```{r}
+m8 <- auto.arima(train,seasonal = TRUE)
+summary(m8)
+```
+
+###  • Model 9: # seasonal, D=1
+```{r}
+m9 <- auto.arima(train,seasonal = TRUE,D=1)
+summary(m9)
+```
+
+###  • Model 10: # seasonal naive
+```{r}
+m10 <- snaive(train, h=12) 
+summary(m10)
+```
+
+## c. Forecast and Plots
+
+```{r}
+fore1 = forecast(m1, h = 12)
+fore2 = forecast(m2, h = 12)
+fore3 = forecast(m3, h = 12)
+fore4 = forecast(m4, h = 12)
+fore5 = forecast(m5, h = 12)
+fore6 = forecast(m6, h = 12)
+fore7 = forecast(m7, h = 12)
+fore8 = forecast(m8, h = 12)
+fore9 = forecast(m9, h = 12)
+fore10 = forecast(m10, h = 12)
+```
+
+```{r}
+plot(fore1)
+plot(fore2)
+plot(fore3)
+plot(fore4)
+plot(fore5)
+plot(fore6)
+plot(fore7)
+plot(fore8)
+plot(fore9)
+plot(fore10)
+```
+
+### Nonseasonal Arima
+```{r}
+autoplot(train) +
+  autolayer(test,series="actual test data")+
+  autolayer(fore1$mean,series="ARIMA(3,0,0) with box")+
+  autolayer(fore2$mean,series="ARIMA(3,0,0) with log")+  
+  #autolayer(fore3$mean,series="ARIMA(3,0,0)(0,0,1)  with box ")+
+  #autolayer(fore4$mean,series="ARIMA(3,0,0)(0,0,1)  with log")+
+  #autolayer(fore5$mean,series="ARIMA(0,0,1)(1,1,0) with drift and box")+
+  #autolayer(fore6$mean,series="ARIMA(0,0,1)(1,1,0) with drift and log")+ 
+  autolayer(fore7$mean,series="ARIMA(4,0,0)")
+  #autolayer(fore8$mean,series="ARIMA(5,0,0)(1,0,0)")+
+  #autolayer(fore9$mean,series="ARIMA(0,0,1)(1,1,0)")+ 
+  #autolayer(m10$mean, series="seasonal naive")
+```
+
+### Seasonal Arima without Seasonal Differencing
+```{r}
+autoplot(train) +
+  autolayer(test,series="actual test data")+
+  #autolayer(fore1$mean,series="ARIMA(3,0,0) with box")+
+  #autolayer(fore2$mean,series="ARIMA(3,0,0) with log")+  
+  autolayer(fore3$mean,series="ARIMA(3,0,0)(0,0,1)  with box ")+
+  autolayer(fore4$mean,series="ARIMA(3,0,0)(0,0,1)  with log")+
+  #autolayer(fore5$mean,series="ARIMA(0,0,1)(1,1,0) with drift and box")+
+  #autolayer(fore6$mean,series="ARIMA(0,0,1)(1,1,0) with drift and log")+ 
+  #autolayer(fore7$mean,series="ARIMA(4,0,0)")
+  autolayer(fore8$mean,series="ARIMA(5,0,0)(1,0,0)")+
+  #autolayer(fore9$mean,series="ARIMA(0,0,1)(1,1,0)")+ 
+  autolayer(m10$mean, series="seasonal naive")
+```
+
+### Seasonal Arima with Seasonal Differencing
+```{r}
+autoplot(train) +
+  autolayer(test,series="actual test data")+
+  #autolayer(fore1$mean,series="ARIMA(3,0,0) with box")+
+  #autolayer(fore2$mean,series="ARIMA(3,0,0) with log")+  
+  #autolayer(fore3$mean,series="ARIMA(3,0,0)(0,0,1)  with box ")+
+  #autolayer(fore4$mean,series="ARIMA(3,0,0)(0,0,1)  with log")+
+  autolayer(fore5$mean,series="ARIMA(0,0,1)(1,1,0) with drift and box")+
+  autolayer(fore6$mean,series="ARIMA(0,0,1)(1,1,0) with drift and log")+ 
+  #autolayer(fore7$mean,series="ARIMA(4,0,0)")
+  #autolayer(fore8$mean,series="ARIMA(5,0,0)(1,0,0)")+
+  autolayer(fore9$mean,series="ARIMA(0,0,1)(1,1,0)")
+  #autolayer(m10$mean, series="seasonal naive")
+```
+
+### Only test data
+### Nonseasonal Arima
+
+```{r}
+autoplot(test,series="actual test data")+
+  autolayer(fore1$mean,series="ARIMA(3,0,0) with box")+
+  autolayer(fore2$mean,series="ARIMA(3,0,0) with log")+  
+  #autolayer(fore3$mean,series="ARIMA(3,0,0)(0,0,1)  with box ")+
+  #autolayer(fore4$mean,series="ARIMA(3,0,0)(0,0,1)  with log")+
+  #autolayer(fore5$mean,series="ARIMA(0,0,1)(1,1,0) with drift and box")+
+  #autolayer(fore6$mean,series="ARIMA(0,0,1)(1,1,0) with drift and log")+ 
+  autolayer(fore7$mean,series="ARIMA(4,0,0)")
+  #autolayer(fore8$mean,series="ARIMA(5,0,0)(1,0,0)")+
+  #autolayer(fore9$mean,series="ARIMA(0,0,1)(1,1,0)")+ 
+  #autolayer(m10$mean, series="seasonal naive")
+```
+
+### Seasonal Arima without Seasonal Differencing
+```{r}
+autoplot(test,series="actual test data")+
+  #autolayer(fore1$mean,series="ARIMA(3,0,0) with box")+
+  #autolayer(fore2$mean,series="ARIMA(3,0,0) with log")+  
+  autolayer(fore3$mean,series="ARIMA(3,0,0)(0,0,1)  with box ")+
+  autolayer(fore4$mean,series="ARIMA(3,0,0)(0,0,1)  with log")+
+  #autolayer(fore5$mean,series="ARIMA(0,0,1)(1,1,0) with drift and box")+
+  #autolayer(fore6$mean,series="ARIMA(0,0,1)(1,1,0) with drift and log")+ 
+  #autolayer(fore7$mean,series="ARIMA(4,0,0)")
+  autolayer(fore8$mean,series="ARIMA(5,0,0)(1,0,0)")+
+  #autolayer(fore9$mean,series="ARIMA(0,0,1)(1,1,0)")+ 
+  autolayer(m10$mean, series="seasonal naive")
+```
+
+
+### Seasonal Arima with Seasonal Differencing
+```{r}
+autoplot(test, series="actual test data")+
+  #autolayer(fore1$mean,series="ARIMA(3,0,0) with box")+
+  #autolayer(fore2$mean,series="ARIMA(3,0,0) with log")+  
+  #autolayer(fore3$mean,series="ARIMA(3,0,0)(0,0,1)  with box ")+
+  #autolayer(fore4$mean,series="ARIMA(3,0,0)(0,0,1)  with log")+
+  autolayer(fore5$mean,series="ARIMA(0,0,1)(1,1,0) with drift and box")+
+  autolayer(fore6$mean,series="ARIMA(0,0,1)(1,1,0) with drift and log")+ 
+  #autolayer(fore7$mean,series="ARIMA(4,0,0)")
+  #autolayer(fore8$mean,series="ARIMA(5,0,0)(1,0,0)")+
+  autolayer(fore9$mean,series="ARIMA(0,0,1)(1,1,0)")
+  #autolayer(m10$mean, series="seasonal naive")
+```
+
+## d. Metrics
+```{r}
+#Mean Absolute Percentage Error (MAPE)
+mape1<-mape(test,fore1$mean)
+mape2<-mape(test,fore2$mean)
+mape3<-mape(test,fore3$mean)
+mape4<-mape(test,fore4$mean)
+mape5<-mape(test,fore5$mean)
+mape6<-mape(test,fore6$mean)
+mape7<-mape(test,fore7$mean)
+mape8<-mape(test,fore8$mean)
+mape9<-mape(test,fore9$mean)
+mape10<-mape(test,fore10$mean)
+
+
+#Mean Squared Error (MSE)
+mse1<-mse(test,fore1$mean)
+mse2<-mse(test,fore2$mean)
+mse3<-mse(test,fore3$mean)
+mse4<-mse(test,fore4$mean)
+mse5<-mse(test,fore5$mean)
+mse6<-mse(test,fore6$mean)
+mse7<-mse(test,fore7$mean)
+mse8<-mse(test,fore8$mean)
+mse9<-mse(test,fore9$mean)
+mse10<-mse(test,fore10$mean)
+
+MAPE=c(mape1,mape2,mape3,mape4,mape5,mape6,mape7,mape8,mape9,mape10)
+MSE=c(mse1,mse2,mse3,mse4,mse5,mse6,mse7,mse8,mse9,mse10)
+
+model_name=c("ARIMA(3,0,0) ","ARIMA(3,0,0) ","ARIMA(3,0,0)(0,0,1) ","ARIMA(3,0,0)(0,0,1)","ARIMA(0,0,1)(1,1,0) with drift","ARIMA(0,0,1)(1,1,0) with drift","ARIMA(4,0,0)","ARIMA(5,0,0)(1,0,0)","ARIMA(0,0,1)(1,1,0)","Seasonal Naiive")
+seadiff<-c(0,0,1,1,0,1,"NA")
+lam<-c("2", "0", "2","0", "2","0","NA","NA","NA","NA")
+
+results<-data.frame(model=model_name,Lambda=lam,AICc=c(m1$aicc,m2$aicc,m3$aicc,m4$aicc,m5$aicc,m6$aicc,m7$aicc,m8$aicc,m9$aicc,"NA"),BIC=c(m1$bic,m2$bic,m3$bic,m4$bic,m5$bic,m6$bic,m7$bic,m8$bic,m9$bic,"NA"),MAPE=MAPE,MSE=MSE)
+
+results
+```
+
+# 2. Exponential Smoothing
+
+```{r}
+PM2.5_ES = ts(log(df_weekly$PM2.5), start = c(2013,9), end = c(2017,9), frequency = 52)
+```
+
+
+
+
+### split the data
+```{r}
+train_ES <- window(PM2.5_ES, start = c(2013,9), end = c(2016,47))
+test_ES <- window(PM2.5_ES, start = c(2016,48), end =c(2017,9))
+```
+
+```{r}
+tsdisplay(train_ES)
+```
+
+```{r}
+plot(train_ES, main = "Plot of Daily log(PM2.5) in Wanshouxigong")
+```
+
+# decompose
+```{r}
+fit_add <- decompose(train_ES, type = 'additive')
+plot(fit_add)
+fit_mul <- decompose(train_ES, type = 'multiplicative')
+plot(fit_mul)
+```
+
+## 1.simple exponential smoothing
+assumes no trend, no seasonality
+```{r}
+ses_forecast <- ses(train_ES, h = 12)
+plot(ses_forecast)
+```
+```{r}
+summary(ses_forecast)
+```
+
+# 2. holt linear trend
+assumes trend, no seasonality
+```{r}
+holt_forecast <- holt(train_ES, h = 12)
+plot(holt_forecast)
+```
+```{r}
+summary(holt_forecast)
+```
+# 3. exponential trend method
+```{r}
+exponential_trend_forecast <- holt(train_ES, h = 12, exponential = TRUE)
+plot(exponential_trend_forecast)
+```
+
+
+# 4.triple exponential smoothing (holt-winters)
+assumes trend, seasonality
+gamma is high, indicating estimate of the seasonal component at current time point is based upon very recent observations
+```{r}
+holtwinters_forecast <- HoltWinters(train_ES, seasonal = 'multiplicative')
+holtwinters_forecast1 <- forecast(holtwinters_forecast, h = 12)
+plot(holtwinters_forecast1)
+```
+
+```{r}
+summary(holtwinters_forecast1)
+```
+
+```{r}
+holtwinters_forecast_ad <- HoltWinters(train_ES, seasonal = 'additive')
+holtwinters_forecast2 <- forecast(holtwinters_forecast_ad, h = 12)
+plot(holtwinters_forecast2)
+```
+
+```{r}
+summary(holtwinters_forecast2)
+```
+
+# Visualizations of test vs. forecasted
+```{r}
+autoplot(train_ES) + 
+  autolayer(test_ES, series = 'actual test data') + 
+  autolayer(ses_forecast$mean, series = 'Simple Exponential Smoothing')
+```
+
+```{r}
+autoplot(train_ES) + 
+  autolayer(test_ES, series = 'actual test data') + 
+  autolayer(holt_forecast$mean, series = 'holt linear trend')
+```
+```{r}
+autoplot(train_ES) + 
+  autolayer(test_ES, series = 'actual test data') + 
+  autolayer(exponential_trend_forecast$mean, series = 'exponential trend')
+```
+
+
+```{r}
+autoplot(train_ES) + 
+  autolayer(test_ES, series = 'actual test data') + 
+  autolayer(holtwinters_forecast1$mean, series = 'Triple Exponential Smoothing multiplicative (Holt-Winters)')
+```
+```{r}
+autoplot(train_ES) + 
+  autolayer(test_ES, series = 'actual test data') + 
+  autolayer(holtwinters_forecast2$mean, series = 'Triple Exponential Smoothing additive (Holt-Winters)')
+```
+
+
+```{r}
+autoplot(exp(test_ES), series = 'actual test data') + 
+  autolayer(exp(ses_forecast$mean), series = 'Simple Exponential Smoothing') + 
+  autolayer(exp(holt_forecast$mean), series = 'Holt Linear Trend') +
+  autolayer(exp(exponential_trend_forecast$mean), series = 'Exponential Trend') +
+  autolayer(exp(holtwinters_forecast1$mean), series = 'Holtwinters multiplicative')+
+  autolayer(exp(holtwinters_forecast2$mean), series = 'Holtwinters additive')
+```
+# Metrics
+
+```{r}
+mape_ses <- mape(exp(test_ES), exp(ses_forecast$mean))
+mape_holt <- mape(exp(test_ES), exp(holt_forecast$mean))
+mape_exponential <- mape(exp(test_ES), exp(exponential_trend_forecast$mean))
+mape_hw_m <- mape(exp(test_ES), exp(holtwinters_forecast1$mean))
+mape_hw_a <- mape(exp(test_ES), exp(holtwinters_forecast2$mean))
+
+
+mse_ses <- mse(exp(test_ES),exp(ses_forecast$mean))
+mse_holt <- mse(exp(test_ES), exp(holt_forecast$mean))
+mse_exponential <- mse(exp(test_ES), exp(exponential_trend_forecast$mean))
+mse_hw_m <- mse(exp(test_ES), exp(holtwinters_forecast1$mean))
+mse_hw_a <- mse(exp(test_ES), exp(holtwinters_forecast2$mean))
+
+
+MAPE=c(mape_ses,mape_holt, mape_exponential, mape_hw_m, mape_hw_a)
+MSE = c(mse_ses,mse_holt,mse_exponential, mse_hw_m,mse_hw_a)
+
+model_name = c('Simple Exponential Smoothing','Holt Linear Trend','Exponential Trend','Holt-Winters Multiplicative', 'Holt-Winters Additive')
+
+results <- data.frame(model = model_name, MAPE = MAPE, MSE = MSE)
+results
+```
+
+
+# 3. Regression and Regression with ARMA errors
+```{r}
+lm <- tslm(train ~ train_pm10 + train_so2 + train_co + train_no2 + train_temp + train_o3 + train_wspm)
+summary(lm)
+```
+
+```{r}
+lm_reduced_1 <- tslm(train ~ train_pm10 + train_co + train_no2 + train_wspm)
+summary(lm_reduced_1)
+
+lm_reduced_2 <- tslm(train ~ train_pm10 + train_co)
+summary(lm_reduced_2)
+```
+
+```{r}
+checkresiduals(lm_reduced_1)
+checkresiduals(lm_reduced_2)
+```
+
+```{r}
+m_arima_1 <- auto.arima(y = train, xreg = cbind(pm10 = train_pm10, co = train_co, no2 = train_no2, wspm = train_wspm), seasonal = T)
+summary(m_arima_1)
+m_arima_2 <- auto.arima(y = train, xreg = cbind(pm10 = train_pm10, co = train_co), seasonal = T)
+summary(m_arima_2)
+
+m_arima_1_log <- auto.arima(y = train, lambda = 0, xreg = cbind(pm10 = train_pm10, co = train_co, no2 = train_no2, wspm = train_wspm), seasonal = T)
+summary(m_arima_1_log)
+m_arima_2_log <- auto.arima(y = train, lambda = 0, xreg = cbind(pm10 = train_pm10, co = train_co), seasonal = T)
+summary(m_arima_2_log)
+```
+
+```{r}
+checkresiduals(m_arima_1)
+checkresiduals(m_arima_2)
+```
+
+```{r}
+# If we know other variables:
+forecast_arima1 <- forecast(m_arima_1, h = 13, xreg = cbind(pm10 = test_pm10, co = test_co, no2 = test_no2, wspm = test_wspm))
+forecast_arima2 <- forecast(m_arima_2, h = 13, xreg = cbind(pm10 = test_pm10, co = test_co))
+plot(forecast_arima1)
+lines(test, type = 'l', col = 'red')
+plot(forecast_arima2)
+lines(test, type = 'l', col = 'red')
+legend("topleft", legend=c("Predicted","Actual"), col=c("blue","red"), lty=1, pch = 1, cex = 0.75)
+```
+
+
+```{r}
+# if we don't
+# we use snaive and arima to predict xreg variables
+m_pm10_arima <- auto.arima(train_pm10, seasonal= T)
+m_co_arima <- auto.arima(train_co, seasonal= T)
+m_no2_arima <- auto.arima(train_no2, seasonal= T)
+m_wspm_arima <- auto.arima(train_wspm, seasonal= T)
+
+forecast_arima1 <- forecast(m_arima_1, h = 12, 
+                            xreg = cbind(pm10 = forecast(snaive(train_pm10, h = 12))$mean, 
+                                         co = forecast(snaive(train_co, h = 12))$mean, 
+                                         no2 = forecast(snaive(train_no2, h = 12))$mean, 
+                                         wspm = forecast(snaive(train_wspm, h = 12))$mean))
+plot(forecast_arima1)
+lines(test, type = 'l', col = 'red')
+legend("topleft", legend=c("Predicted","Actual"), col=c("blue","red"), lty=1, pch = 1, cex = 0.75)
+
+forecast_arima2 <- forecast(m_arima_1, h = 12, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima, h = 12)$mean, 
+                                         co = forecast(m_co_arima, h = 12)$mean, 
+                                         no2 = forecast(m_no2_arima, h = 12)$mean, 
+                                         wspm = forecast(m_wspm_arima, h = 12)$mean))
+plot(forecast_arima2)
+lines(test, type = 'l', col = 'red')
+legend("topleft", legend=c("Predicted","Actual"), col=c("blue","red"), lty=1, pch = 1, cex = 0.75)
+
+forecast_arima3 <- forecast(m_arima_2, h = 12, 
+                            xreg = cbind(pm10 = forecast(snaive(train_pm10, h = 12))$mean, 
+                                         co = forecast(snaive(train_co, h = 12))$mean))
+plot(forecast_arima3)
+lines(test, type = 'l', col = 'red')
+legend("topleft", legend=c("Predicted","Actual"), col=c("blue","red"), lty=1, pch = 1, cex = 0.75)
+
+forecast_arima4 <- forecast(m_arima_2, h = 12, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima, h = 12)$mean, 
+                                         co = forecast(m_co_arima, h = 12)$mean))
+plot(forecast_arima4)
+lines(test, type = 'l', col = 'red')
+legend("topleft", legend=c("Predicted","Actual"), col=c("blue","red"), lty=1, pch = 1, cex = 0.75)
+
+
+# MAPE
+mape1 <- mean(abs(test - forecast_arima1$mean) / test)
+# MSE
+mse1 <- mean((test - forecast_arima1$mean)^2)
+
+# MAPE
+mape2 <- mean(abs(test - forecast_arima2$mean) / test)
+# MSE
+mse2 <- mean((test - forecast_arima2$mean)^2)
+
+# MAPE
+mape3 <- mean(abs(test - forecast_arima3$mean) / test)
+# MSE
+mse3 <- mean((test - forecast_arima3$mean)^2)
+
+# MAPE
+mape4 <- mean(abs(test - forecast_arima4$mean) / test)
+# MSE
+mse4 <- mean((test - forecast_arima4$mean)^2)
+
+
+cbind(mape1, mse1, mape2, mse2, mape3, mse3, mape4, mse4)
+```
+
+```{r}
+autoplot(test, series = 'Test') + 
+  autolayer(forecast_arima1$mean, series = "Arima_4Xreg_SNaive") +
+  autolayer(forecast_arima2$mean, series = "Arima_4Xreg_Arima") +
+  autolayer(forecast_arima3$mean, series = "Arima_2Xreg_SNaive") +
+  autolayer(forecast_arima4$mean, series = "Arima_2Xreg_Arima")
+```
+```{r}
+model_name = c('Arima with 4 Xreg predicted by Seasonal Naive','Arima with 4 Xreg predicted by Seasonal Arima','Arima with 2 Xreg predicted by Seasonal Naive','Arima with 2 Xreg predicted by Seasonal Arima')
+
+results <- data.frame(model = model_name, MAPE = c(mape1, mape2, mape3, mape4), MSE = c(mse1, mse2, mse3, mse4), AICc = c(m_arima_1$aicc, m_arima_1$aicc, m_arima_2$aicc, m_arima_2$aicc))
+results
+```
+
+
+## e. Cross Validation
+
+
+```{r}
+k <- 140 # minimum data length for fitting a model
+n <- length(PM2.5_week) # Number of data points
+
+p <- 52 ### Period
+H <- 12 # Forecast Horizon
+```
+
+
+```{r warning=FALSE}
+# Arima and Arima on Error
+st <- tsp(PM2.5_week)[1]+(k-2)/p #  gives the start time in time units,
+
+mse_1 <- matrix(NA,n-k,H)
+mse_2 <- matrix(NA,n-k,H)
+mse_3 <- matrix(NA,n-k,H)
+mse_4 <- matrix(NA,n-k,H)
+mse_5 <- matrix(NA,n-k,H)
+mse_6 <- matrix(NA,n-k,H)
+mse_7 <- matrix(NA,n-k,H)
+mse_8 <- matrix(NA,n-k,H)
+mse_9 <- matrix(NA,n-k,H)
+mse_10 <- matrix(NA,n-k,H)
+
+
+aicc_1 <- matrix(NA,n-k,1)
+aicc_2 <- matrix(NA,n-k,1)
+aicc_3 <- matrix(NA,n-k,1)
+aicc_4 <- matrix(NA,n-k,1)
+aicc_5 <- matrix(NA,n-k,1)
+aicc_6 <- matrix(NA,n-k,1)
+aicc_7 <- matrix(NA,n-k,1)
+aicc_8 <- matrix(NA,n-k,1)
+aicc_9 <- matrix(NA,n-k,1)
+aicc_10 <- matrix(NA,n-k,1)
+
+
+for(i in 1:(n-k))
+{
+  print(paste0(i, '/', n-k))
+  ### One Month rolling forecasting
+  # Expanding Window 
+  train_1 <- window(PM2.5_week, end=st + i/p)  ## Window Length: k+i
+  train_pm10_1 <- window(PM10_week, end=st + i/p)  ## Window Length: k+i
+  train_no2_1 <- window(NO2_week, end=st + i/p)  ## Window Length: k+i
+  train_co_1 <- window(CO_week, end=st + i/p)  ## Window Length: k+i
+  train_wspm_1 <- window(WSPM_week, end=st + i/p)  ## Window Length: k+i
+
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_2 <- window(PM2.5_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_pm10_2 <- window(PM10_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_no2_2 <- window(NO2_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_co_2 <- window(CO_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_wspm_2 <- window(WSPM_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  
+  test <- window(PM2.5_week, start=st + (i+1)/p, end=st + (i+H)/p) ## Window Length: H
+
+  m4_1 <- auto.arima(train_1,lambda = 0,seasonal = TRUE)
+  m6_1 <- auto.arima(train_1,lambda = 0,seasonal = TRUE,D=1)
+  m8_1 <- auto.arima(train_1,seasonal = TRUE)
+  
+  m4_2 <- auto.arima(train_2,lambda = 0,seasonal = TRUE)
+  m6_2 <- auto.arima(train_2,lambda = 0,seasonal = TRUE,D=1)
+  m8_2 <- auto.arima(train_2,seasonal = TRUE)
+
+  m_arima_1 <- auto.arima(y = train_1, xreg = cbind(pm10 = train_pm10_1, co = train_co_1, no2 = train_no2_1, wspm = train_wspm_1), seasonal = T)
+  
+  m_arima_2 <- auto.arima(y = train_2, xreg = cbind(pm10 = train_pm10_2, co = train_co_2, no2 = train_no2_2, wspm = train_wspm_2), seasonal = T)
+
+  m_arima_3 <- auto.arima(y = train_1, xreg = cbind(pm10 = train_pm10_1, co = train_co_1), seasonal = T)
+
+  m_arima_4 <- auto.arima(y = train_2, xreg = cbind(pm10 = train_pm10_2, co = train_co_2), seasonal = T)
+  
+  m_pm10_arima_1 <- auto.arima(train_pm10_1, seasonal= T)
+  m_co_arima_1 <- auto.arima(train_co_1, seasonal= T)
+  m_no2_arima_1 <- auto.arima(train_no2_1, seasonal= T)
+  m_wspm_arima_1 <- auto.arima(train_wspm_1, seasonal= T)
+ 
+  m_pm10_arima_2 <- auto.arima(train_pm10_2, seasonal= T)
+  m_co_arima_2 <- auto.arima(train_co_2, seasonal= T)
+  m_no2_arima_2 <- auto.arima(train_no2_2, seasonal= T)
+  m_wspm_arima_2 <- auto.arima(train_wspm_2, seasonal= T)
+  
+  fcast_1 <- forecast(m_arima_1, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_1, h = H)$mean, 
+                                         co = forecast(m_co_arima_1, h = H)$mean, 
+                                         no2 = forecast(m_no2_arima_1, h = H)$mean, 
+                                         wspm = forecast(m_wspm_arima_1, h = H)$mean))
+
+  fcast_2 <- forecast(m_arima_2, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_2, h = H)$mean, 
+                                         co = forecast(m_co_arima_2, h = H)$mean, 
+                                         no2 = forecast(m_no2_arima_2, h = H)$mean, 
+                                         wspm = forecast(m_wspm_arima_2, h = H)$mean))
+
+  fcast_3 <- forecast(m_arima_3, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_1, h = H)$mean, 
+                                         co = forecast(m_co_arima_1, h = H)$mean))
+
+  fcast_4 <- forecast(m_arima_4, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_2, h = H)$mean, 
+                                         co = forecast(m_co_arima_2, h = H)$mean))
+
+  fcast_5 <- forecast(m4_1, h = H)
+  
+  fcast_6 <- forecast(m4_2, h = H)
+  
+  fcast_7 <- forecast(m6_1, h = H)
+  
+  fcast_8 <- forecast(m6_2, h = H)
+
+  fcast_9 <- forecast(m8_1, h = H)
+  
+  fcast_10 <- forecast(m8_2, h = H)
+
+  mse_1[i,1:length(test)] <- (fcast_1[['mean']]-test)^2
+  mse_2[i,1:length(test)] <- (fcast_2[['mean']]-test)^2
+  mse_3[i,1:length(test)] <- (fcast_3[['mean']]-test)^2
+  mse_4[i,1:length(test)] <- (fcast_4[['mean']]-test)^2
+  mse_5[i,1:length(test)] <- (fcast_5[['mean']]-test)^2
+  mse_6[i,1:length(test)] <- (fcast_6[['mean']]-test)^2
+  mse_7[i,1:length(test)] <- (fcast_7[['mean']]-test)^2
+  mse_8[i,1:length(test)] <- (fcast_8[['mean']]-test)^2
+  mse_9[i,1:length(test)] <- (fcast_9[['mean']]-test)^2
+  mse_10[i,1:length(test)] <- (fcast_10[['mean']]-test)^2
+
+  
+  aicc_1[i,1] <- m_arima_1$aicc
+  aicc_2[i,1] <- m_arima_2$aicc
+  aicc_3[i,1] <- m_arima_3$aicc
+  aicc_4[i,1] <- m_arima_4$aicc
+  aicc_5[i,1] <- m4_1$aicc
+  aicc_6[i,1] <- m4_2$aicc
+  aicc_7[i,1] <- m6_1$aicc
+  aicc_8[i,1] <- m6_2$aicc
+  aicc_9[i,1] <- m8_1$aicc
+  aicc_10[i,1] <- m8_2$aicc
+}
+```
+
+
+
+```{r warning=FALSE}
+# Exponential Smoothing
+st <- tsp(PM2.5_ES)[1]+(k-2)/p #  gives the start time in time units,
+
+mse_11 <- matrix(NA,n-k,H)
+mse_12 <- matrix(NA,n-k,H)
+
+aicc_11 <- matrix(NA,n-k,1)
+aicc_12 <- matrix(NA,n-k,1)
+
+for(i in 1:(n-k))
+{
+  print(paste0(i, '/', n-k))
+  ### One Month rolling forecasting
+  # Expanding Window 
+  train_ES_1 <- window(PM2.5_ES, end=st + i/p)  ## Window Length: k+i
+
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_ES_2 <- window(PM2.5_ES, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+
+  test_ES <- exp(window(PM2.5_ES, start=st + (i+1)/p, end=st + (i+H)/p)) ## Window Length: H
+
+  m_HW_1 <- HoltWinters(train_ES_1, seasonal = 'multiplicative')
+  m_HW_2 <- HoltWinters(train_ES_2, seasonal = 'multiplicative')
+
+  fcast_11 <- forecast(m_HW_1, h = H)
+  fcast_12 <- forecast(m_HW_2, h = H)
+
+  mse_11[i,1:length(test_ES)] <- (exp(fcast_11[['mean']])-test_ES)^2
+  mse_12[i,1:length(test_ES)] <- (exp(fcast_12[['mean']])-test_ES)^2
+}
+```
+
+```{r}
+# log arima with regresson error
+st <- tsp(PM2.5_week)[1]+(k-2)/p #  gives the start time in time units,
+
+mse_13 <- matrix(NA,n-k,H)
+mse_14 <- matrix(NA,n-k,H)
+mse_15 <- matrix(NA,n-k,H)
+mse_16 <- matrix(NA,n-k,H)
+
+aicc_13 <- matrix(NA,n-k,1)
+aicc_14 <- matrix(NA,n-k,1)
+aicc_15 <- matrix(NA,n-k,1)
+aicc_16 <- matrix(NA,n-k,1)
+
+for(i in 1:(n-k))
+{
+  print(paste0(i, '/', n-k))
+  ### One Month rolling forecasting
+  # Expanding Window 
+  train_1 <- window(PM2.5_week, end=st + i/p)  ## Window Length: k+i
+  train_pm10_1 <- window(PM10_week, end=st + i/p)  ## Window Length: k+i
+  train_no2_1 <- window(NO2_week, end=st + i/p)  ## Window Length: k+i
+  train_co_1 <- window(CO_week, end=st + i/p)  ## Window Length: k+i
+  train_wspm_1 <- window(WSPM_week, end=st + i/p)  ## Window Length: k+i
+
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_2 <- window(PM2.5_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_pm10_2 <- window(PM10_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_no2_2 <- window(NO2_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_co_2 <- window(CO_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  train_wspm_2 <- window(WSPM_week, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  
+  test <- window(PM2.5_week, start=st + (i+1)/p, end=st + (i+H)/p) ## Window Length: H
+
+  m_arima_1 <- auto.arima(y = train_1, xreg = cbind(pm10 = train_pm10_1, co = train_co_1, no2 = train_no2_1, wspm = train_wspm_1), seasonal = T, lambda = 0)
+  
+  m_arima_2 <- auto.arima(y = train_2, xreg = cbind(pm10 = train_pm10_2, co = train_co_2, no2 = train_no2_2, wspm = train_wspm_2), seasonal = T, lambda = 0)
+
+  m_arima_3 <- auto.arima(y = train_1, xreg = cbind(pm10 = train_pm10_1, co = train_co_1), seasonal = T, lambda = 0)
+
+  m_arima_4 <- auto.arima(y = train_2, xreg = cbind(pm10 = train_pm10_2, co = train_co_2), seasonal = T, lambda = 0)
+  
+  m_pm10_arima_1 <- auto.arima(train_pm10_1, seasonal= T)
+  m_co_arima_1 <- auto.arima(train_co_1, seasonal= T)
+  m_no2_arima_1 <- auto.arima(train_no2_1, seasonal= T)
+  m_wspm_arima_1 <- auto.arima(train_wspm_1, seasonal= T)
+ 
+  m_pm10_arima_2 <- auto.arima(train_pm10_2, seasonal= T)
+  m_co_arima_2 <- auto.arima(train_co_2, seasonal= T)
+  m_no2_arima_2 <- auto.arima(train_no2_2, seasonal= T)
+  m_wspm_arima_2 <- auto.arima(train_wspm_2, seasonal= T)
+  
+  fcast_1 <- forecast(m_arima_1, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_1, h = H)$mean, 
+                                         co = forecast(m_co_arima_1, h = H)$mean, 
+                                         no2 = forecast(m_no2_arima_1, h = H)$mean, 
+                                         wspm = forecast(m_wspm_arima_1, h = H)$mean))
+
+  fcast_2 <- forecast(m_arima_2, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_2, h = H)$mean, 
+                                         co = forecast(m_co_arima_2, h = H)$mean, 
+                                         no2 = forecast(m_no2_arima_2, h = H)$mean, 
+                                         wspm = forecast(m_wspm_arima_2, h = H)$mean))
+
+  fcast_3 <- forecast(m_arima_3, h = H, 
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_1, h = H)$mean, 
+                                         co = forecast(m_co_arima_1, h = H)$mean))
+
+  fcast_4 <- forecast(m_arima_4, h = H,
+                            xreg = cbind(pm10 = forecast(m_pm10_arima_2, h = H)$mean, 
+                                         co = forecast(m_co_arima_2, h = H)$mean))
+
+  mse_13[i,1:length(test)] <- (fcast_1[['mean']]-test)^2
+  mse_14[i,1:length(test)] <- (fcast_2[['mean']]-test)^2
+  mse_15[i,1:length(test)] <- (fcast_3[['mean']]-test)^2
+  mse_16[i,1:length(test)] <- (fcast_4[['mean']]-test)^2
+ 
+  aicc_13[i,1] <- m_arima_1$aicc
+  aicc_14[i,1] <- m_arima_2$aicc
+  aicc_15[i,1] <- m_arima_3$aicc
+  aicc_16[i,1] <- m_arima_4$aicc
+}
+```
+
+
+```{r}
+# Expanding MSE
+plot(1:12, colMeans(mse_1,na.rm=TRUE), type="l",col=1,xlab="horizon", ylab="MSE", main = "MSE of different models and CV method", ylim = c(-0, 7000))
+lines(1:12, colMeans(mse_3,na.rm=TRUE), type="l",col=2)
+lines(1:12, colMeans(mse_5,na.rm=TRUE), type="l",col=3)
+lines(1:12, colMeans(mse_7,na.rm=TRUE), type="l",col=4)
+lines(1:12, colMeans(mse_9,na.rm=TRUE), type="l",col=5)
+lines(1:12, colMeans(mse_11,na.rm=TRUE), type="l",col=6)
+lines(1:12, colMeans(mse_13,na.rm=TRUE), type="l",col=7)
+lines(1:12, colMeans(mse_15,na.rm=TRUE), type="l",col=8)
+legend("topright",legend=c("Arima_4Xreg - Expanding Window","Arima_2Xreg - Expanding Window", "Seasonal Log Arima - Expanding Window", "Seasonal Log Arima with D=1 - Expanding Window", "Seasonal Arima- Expanding Window", "HoltWinter Multiplicative - Expanding Window", 'Log Arima_4Xreg - Expanding Window', 'Log Arima_2Xreg - Expanding Window'),col=1:8,lty=1)
+```
+
+```{r}
+# Sliding MSE
+plot(1:12, colMeans(mse_2,na.rm=TRUE), type="l",col=1,xlab="horizon", ylab="MSE", main = "MSE of different models and CV method", ylim = c(0, 12000))
+lines(1:12, colMeans(mse_4,na.rm=TRUE), type="l",col=2)
+lines(1:12, colMeans(mse_6,na.rm=TRUE), type="l",col=3)
+lines(1:12, colMeans(mse_8,na.rm=TRUE), type="l",col=4)
+lines(1:12, colMeans(mse_10,na.rm=TRUE), type="l",col=5)
+lines(1:12, colMeans(mse_12,na.rm=TRUE), type="l",col=6)
+lines(1:12, colMeans(mse_14,na.rm=TRUE), type="l",col=7)
+lines(1:12, colMeans(mse_16,na.rm=TRUE), type="l",col=8)
+legend("topright",legend=c("Arima_4Xreg - Sliding Window","Arima_2Xreg - Sliding Window", "Seasonal Log Arima - Sliding Window", "Seasonal Log Arima with D=1 - Sliding Window", "Seasonal Arima- Sliding Window", "HoltWinter Multiplicative - Sliding Window", 'Log Arima_4Xreg - Sliding Window', 'Log Arima_2Xreg - Sliding Window'),col=1:8,lty=1)
+
+```
+
+
+```{r}
+# Expanding AICc
+plot(1:69, aicc_1, type="l",col=1,xlab="horizon", ylab="AICc", main = "AICc of different models and CV method", ylim = c(0, 4000))
+lines(1:69, aicc_3, type="l",col=2)
+lines(1:69, aicc_5, type="l",col=3)
+lines(1:69, aicc_7, type="l",col=4)
+lines(1:69, aicc_9, type="l",col=5)
+lines(1:69, aicc_13, type="l",col=6)
+lines(1:69, aicc_15, type="l",col=7)
+legend("topright",legend=c("Arima_4Xreg - Expanding Window","Arima_2Xreg - Expanding Window", "Seasonal Log Arima - Expanding Window", "Seasonal Log Arima with D=1 - Expanding Window", "Seasonal Arima- Expanding Window", 'Log Arima_4Xreg - Expanding Window', 'Log Arima_2Xreg - Expanding Window'),col=1:7,lty=1)
+```
+
+```{r}
+# Expanding AICc
+plot(1:69, aicc_2, type="l",col=1,xlab="horizon", ylab="AICc", main = "AICc of different models and CV method", ylim = c(0, 3000))
+lines(1:69, aicc_4, type="l",col=2)
+lines(1:69, aicc_6, type="l",col=3)
+lines(1:69, aicc_8, type="l",col=4)
+lines(1:69, aicc_10, type="l",col=5)
+lines(1:69, aicc_14, type="l",col=6)
+lines(1:69, aicc_16, type="l",col=7)
+legend("topright",legend=c("Arima_4Xreg - Sliding Window","Arima_2Xreg - Sliding Window", "Seasonal Log Arima - Sliding Window", "Seasonal Log Arima with D=1 - Sliding Window", "Seasonal Arima- Sliding Window", 'Log Arima_4Xreg - Sliding Window', 'Log Arima_2Xreg - Sliding Window'),col=1:7,lty=1)
+```
+
+
+
+
+
+
