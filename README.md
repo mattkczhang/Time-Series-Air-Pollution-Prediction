@@ -1,4 +1,4 @@
-# Time-Series-Air-Pollution-Prediction
+# Time Series Air Pollution Prediction
 
 The Time Series Air Pollution project is a in-class group project at the University of Chicago Time Series Analysis and Forecasting course in 2022 Spring.
 
